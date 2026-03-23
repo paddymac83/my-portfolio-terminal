@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>4×16 Peak Allocation — Naive vs Two-Pass</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #1a170f;
+    --bg2:       #231f14;
+    --bg3:       #2c271a;
+    --text:      #eceae5;
+    --text2:     #a09d94;
+    --text3:     #6b6860;
+    --border:    rgba(255,157,0,0.12);
+    --border2:   rgba(255,157,0,0.25);
+    --border3:   rgba(255,157,0,0.45);
+    --radius:    0px;
+    --font: "Fira Code", "JetBrains Mono", Monaco, Consolas, "Ubuntu Mono", monospace;
+    --mono: "Fira Code", "JetBrains Mono", Monaco, Consolas, "Ubuntu Mono", monospace;
+  }
+
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:    #1a1a18;
+      --bg2:   #232320;
+      --bg3:   #2c2c2a;
+      --text:  #e8e6de;
+      --text2: #9c9a92;
+      --text3: #6b6964;
+      --b:     rgba(255,255,255,0.10);
+      --b2:    rgba(255,255,255,0.20);
+      --b3:    rgba(255,255,255,0.32);
+    }
+  }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    padding: 2rem 1.5rem;
+    max-width: 820px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  h1 {
+    font-size: 18px;
+    font-weight: 500;
+    margin-bottom: 4px;
+    color: var(--text);
+  }
+
+  .subtitle {
+    font-size: 12px;
+    color: var(--text2);
+    margin-bottom: 1.5rem;
+  }
+
+  /* ── Toggle ── */
+  .tog {
+    display: flex;
+    gap: 0;
+    margin-bottom: 16px;
+    border: 0.5px solid var(--b2);
+    border-radius: 20px;
+    overflow: hidden;
+    width: fit-content;
+  }
+
+  .tog-btn {
+    background: var(--bg2);
+    border: none;
+    padding: 6px 20px;
+    font-size: 12px;
+    font-family: var(--font);
+    cursor: pointer;
+    color: var(--text2);
+    transition: all 0.15s;
+  }
+
+  .tog-btn.active {
+    background: var(--bg3);
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .tog-btn:first-child {
+    border-right: 0.5px solid var(--b2);
+  }
+
+  .tog-btn:hover:not(.active) {
+    background: var(--bg3);
+    color: var(--text);
+  }
+
+  /* ── Panels ── */
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* ── Info box ── */
+  .info {
+    background: var(--bg2);
+    border: 0.5px solid var(--b2);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: var(--text2);
+    line-height: 1.7;
+  }
+
+  .info strong { color: var(--text); }
+
+  .info code {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--bg3);
+    border-radius: 3px;
+    padding: 1px 4px;
+  }
+
+  .info.danger {
+    border-color: #A32D2D;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .info.danger { border-color: #E24B4A; }
+  }
+
+  /* ── Table ── */
+  .tbl {
+    border: 0.5px solid var(--b2);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 14px;
+  }
+
+  .row {
+    display: grid;
+    align-items: center;
+    border-bottom: 0.5px solid var(--b);
+    padding: 0;
+  }
+
+  .row:last-child { border-bottom: none; }
+
+  .row.hdr {
+    background: var(--bg2);
+    border-bottom: 0.5px solid var(--b2);
+  }
+
+  .row.total {
+    background: var(--bg2);
+    border-top: 1.5px solid var(--b3);
+    border-bottom: none;
+  }
+
+  .cell {
+    font-size: 12px;
+    color: var(--text);
+    padding: 7px 10px;
+  }
+
+  .cell.muted { color: var(--text2); }
+
+  .cell.hdr-cell {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text2);
+  }
+
+  .cell.eq {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text2);
+  }
+
+  .cell.eq strong { color: var(--text); }
+
+  /* ── Colour tags ── */
+  .tag {
+    display: inline-block;
+    border-radius: 3px;
+    border: 0.5px solid;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  /* terminal theme */
+  .t-sumf  { background:#1a2e1a; border-color:#1D9E75; color:#9FE1CB; }
+  .t-sumf2 { background:#0f3d2a; border-color:#0F6E56; color:#9FE1CB; }
+  .t-rhs   { background:#2a1f00; border-color:#ff9d00; color:#ffd080; }
+  .t-lhs   { background:#2e1a00; border-color:#ffb833; color:#ffe0a0; }
+  .t-mac   { background:#2e1000; border-color:#ff6b00; color:#ffb380; }
+  .t-mac2  { background:#3a0a00; border-color:#cc3300; color:#ff9980; }
+  .t-bsc   { background:#1a2000; border-color:#a0c020; color:#d0e890; }
+  .t-bsc2  { background:#1f2a00; border-color:#3B6D11; color:#d0e890; }
+
+
+
+  /* ── Change badges ── */
+  .chg {
+    display: inline-block;
+    border-radius: 3px;
+    padding: 1px 8px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .chg-same {
+    background: var(--bg2);
+    border: 0.5px solid var(--b2);
+    color: var(--text2);
+  }
+
+  .chg-up {
+    background: #FAEEDA;
+    border: 0.5px solid #BA7517;
+    color: #412402;
+  }
+
+  .chg-over {
+    background: #FCEBEB;
+    border: 0.5px solid #A32D2D;
+    color: #501313;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .chg-up   { background:#412402; border-color:#EF9F27; color:#FAC775; }
+    .chg-over { background:#501313; border-color:#E24B4A; color:#F7C1C1; }
+  }
+
+  /* ── Footer ── */
+  .footer {
+    font-size: 11px;
+    color: var(--text3);
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 0.5px solid var(--b);
+  }
+</style>
+</head>
+<body>
+
+<h1>4×16 Peak Allocation — Naive vs Two-Pass</h1>
+<p class="subtitle">Register pressure at VLEN=256, relative to the 4×8 baseline (25 of 32 physical registers)</p>
+
+<div class="tog">
+  <button class="tog-btn active" onclick="tog(0)">Naive 4×16 (single pass)</button>
+  <button class="tog-btn" onclick="tog(1)">Two-pass 4×16 (interleaved)</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     PANEL 0 — Naive 4×16
+═══════════════════════════════════════════════ -->
+<div class="panel active" id="p0">
+
+  <div class="info">
+    <strong>Naive 4×16:</strong> all 16 columns processed simultaneously in one MAC chain per row.
+    The RHS must cover 16 cols × 32 K-elements = 256 bytes, requiring <code>i8m8</code> for the raw
+    load. The MAC accumulator must hold 128 i16 values → <code>i16m8</code> (8 phys regs). The
+    <code>sumf</code> accumulators need 16 floats per row → <code>f32m2</code> (2 phys regs each).
+    <strong>Total: 42 of 32 — impossible at VLEN=256.</strong>
+  </div>
+
+  <div class="tbl">
+    <div class="row hdr" style="grid-template-columns:1fr 100px 90px 90px">
+      <div class="cell hdr-cell">Variable</div>
+      <div class="cell hdr-cell">Type</div>
+      <div class="cell hdr-cell">Phys regs</div>
+      <div class="cell hdr-cell">vs 4×8</div>
+    </div>
+
+    <div class="row" style="grid-template-columns:1fr 100px 90px 90px">
+      <div class="cell"><span class="tag t-sumf2">sumf0–3 (4 rows × 16 cols)</span></div>
+      <div class="cell muted">f32m2 ×4</div>
+      <div class="cell muted">8</div>
+      <div class="cell"><span class="chg chg-up">+4</span></div>
+    </div>
+
+    <div class="row" style="grid-template-columns:1fr 100px 90px 90px">
+      <div class="cell"><span class="tag t-rhs">rhs_lo_0/1/2/3, hi_0/1/2/3</span></div>
+      <div class="cell muted">i8m4 ×4</div>
+      <div class="cell muted">16</div>
+      <div class="cell"><span class="chg chg-over">+8</span></div>
+    </div>
+
+    <div class="row" style="grid-template-columns:1fr 100px 90px 90px">
+      <div class="cell"><span class="tag t-lhs">lhs_0_8 .. lhs_3_8</span></div>
+      <div class="cell muted">i8m2 ×4</div>
+      <div class="cell muted">8</div>
+      <div class="cell"><span class="chg chg-same">same</span></div>
+    </div>
+
+    <div class="row" style="grid-template-columns:1fr 100px 90px 90px">
+      <div class="cell"><span class="tag t-mac2">MAC accumulator</span></div>
+      <div class="cell muted">i16m8 ×1</div>
+      <div class="cell muted">8</div>
+      <div class="cell"><span class="chg chg-over">+4</span></div>
+    </div>
+
+    <div class="row" style="grid-template-columns:1fr 100px 90px 90px">
+      <div class="cell"><span class="tag t-bsc2">b_scales_vec (16 cols)</span></div>
+      <div class="cell muted">f32m2 ×1</div>
+      <div class="cell muted">2</div>
+      <div class="cell"><span class="chg chg-up">+1</span></div>
+    </div>
+
+    <div class="row total" style="grid-template-columns:1fr 100px 90px 90px">
+      <div class="cell" style="font-weight:500">Peak total</div>
+      <div class="cell"></div>
+      <div class="cell eq"><strong>42</strong> of 32</div>
+      <div class="cell"><span class="chg chg-over">+17 ✗</span></div>
+    </div>
+  </div>
+
+  <div class="info danger">
+    The register file overflow is not marginal — 10 registers over budget. The compiler would be
+    forced to spill and reload on every loop iteration, turning vector registers into memory traffic
+    and eliminating the performance benefit entirely.
+    <strong>Naive 4×16 is not viable at VLEN=256.</strong>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     PANEL 1 — Two-pass 4×16
+═══════════════════════════════════════════════ -->
+<div class="panel" id="p1">
+
+  <div class="info">
+    <strong>Two-pass 4×16 (interleaved K-loop):</strong> processes 8 columns per MAC chain pass.
+    The MAC accumulator stays <code>i16m4</code>. The only extra cost over 4×8 is 4 additional
+    <code>f32m1</code> accumulators (sumf4–7) for the second column group, which remain live across
+    both passes within each row block. RHS registers are freed and reused between passes.
+  </div>
+
+  <div class="tbl">
+    <div class="row hdr" style="grid-template-columns:1fr 110px 90px 90px">
+      <div class="cell hdr-cell">Variable</div>
+      <div class="cell hdr-cell">Type</div>
+      <div class="cell hdr-cell">Phys regs</div>
+      <div class="cell hdr-cell">vs 4×8</div>
+    </div>
+
+    <div class="row" style="grid-template-columns:1fr 110px 90px 90px">
+      <div class="cell"><span class="tag t-sumf">sumf0–3 (cols 0–7, all rows)</span></div>
+      <div class="cell muted">f32m1 ×4</div>
+      <div class="cell muted">4</div>
+      <div class="cell"><span class="chg chg-same">same</span></div>
+    </div>
+
+    <div class="row" style="grid-template-columns:1fr 110px 90px 90px">
+      <div class="cell"><span class="tag t-sumf2">sumf4–7 (cols 8–15, all rows)</span></div>
+      <div class="cell muted">f32m1 ×4</div>
+      <div class="cell muted">4</div>
+      <div class="cell"><span class="chg chg-up">+4 new</span></div>
+    </div>
+
+    <div class="row" style="grid-template-columns:1fr 110px 90px 90px">
+      <div class="cell"><span class="tag t-lhs">lhs_0..3 (current row, both passes)</span></div>
+      <div class="cell muted">i8m2 ×4</div>
+      <div class="cell muted">8</div>
+      <div class="cell"><span class="chg chg-same">same</span></div>
+    </div>
+
+    <div class="row" style="grid-template-columns:1fr 110px 90px 90px">
+      <div class="cell"><span class="tag t-rhs">rhs halves (one pass at a time)</span></div>
+      <div class="cell muted">i8m2 ×4</div>
+      <div class="cell muted">8</div>
+      <div class="cell"><span class="chg chg-same">same</span></div>
+    </div>
+
+    <div class="row" style="grid-template-columns:1fr 110px 90px 90px">
+      <div class="cell"><span class="tag t-mac">MAC accumulator</span></div>
+      <div class="cell muted">i16m4 ×1</div>
+      <div class="cell muted">4</div>
+      <div class="cell"><span class="chg chg-same">same</span></div>
+    </div>
+
+    <div class="row" style="grid-template-columns:1fr 110px 90px 90px">
+      <div class="cell"><span class="tag t-bsc">b_scales_vec (one pass at a time)</span></div>
+      <div class="cell muted">f32m1 ×1</div>
+      <div class="cell muted">1</div>
+      <div class="cell"><span class="chg chg-same">same</span></div>
+    </div>
+
+    <div class="row total" style="grid-template-columns:1fr 110px 90px 90px">
+      <div class="cell" style="font-weight:500">Peak total</div>
+      <div class="cell"></div>
+      <div class="cell eq"><strong>29</strong> of 32</div>
+      <div class="cell"><span class="chg chg-up">+4 ✓</span></div>
+    </div>
+  </div>
+
+  <div class="info">
+    3 registers spare. The key insight is that <strong>rhs halves from pass 1 are freed before
+    pass 2 loads its own rhs halves</strong> — they never coexist. The lhs registers are the only
+    ones held across both passes, and they already existed in the 4×8 baseline. The sole cost is
+    the 4 extra sumf accumulators — the minimum possible overhead for doubling the output column
+    count.
+  </div>
+
+</div>
+
+<div class="footer">
+  ggml_gemm_q4_0_8x8_q8_0_4x16 · RISC-V Vector · VLEN=256 · 4×16 register pressure analysis
+</div>
+
+<script>
+  const btns   = document.querySelectorAll('.tog-btn');
+  const panels = document.querySelectorAll('.panel');
+
+  function tog(i) {
+    btns.forEach((b, j)   => b.classList.toggle('active', i === j));
+    panels.forEach((p, j) => p.classList.toggle('active', i === j));
+  }
+</script>
+</body>
+</html>

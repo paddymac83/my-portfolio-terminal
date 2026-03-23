@@ -25,7 +25,8 @@
     "astro": "astro"
   },
   "dependencies": {
-    "astro": "^5.15.7"
+    "astro": "^5.15.7",
+    "rehype-raw": "^7.0.0"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.5",

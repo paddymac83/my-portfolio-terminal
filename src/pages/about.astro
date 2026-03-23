@@ -2,28 +2,43 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 ---
 
-<BaseLayout title="About">
+<BaseLayout
+  title="About"
+  description="Senior AI Engineer with a hardware background, exploring LLM optimisation on RISC-V"
+>
   <div class="page">
     <h1>About</h1>
+
     <p>
-      This is the Astro Terminal theme, a port of the fantastic
-      <a href="https://github.com/panr/hugo-theme-terminal" target="_blank" rel="noopener">Hugo Terminal theme</a>
-      created by <a href="https://github.com/panr" target="_blank" rel="noopener">panr</a>.
+      I'm Paddy McNabb — a Senior AI Engineer with a Ph.D. in Power System Dynamics and a first-class
+      M.Eng in Electronics &amp; Electrical Engineering from the University of Edinburgh. That hardware
+      foundation has always sat beneath everything I do in software, and it's what draws me back to
+      the metal when most AI engineers are happy to stay in the cloud.
     </p>
-    
+
     <p>
-      The Astro version maintains all the great features of the original theme whilst using Astro's modern 
-      static site generation capabilities.
+      Over 19 years I've built production AI and ML systems across Energy, Financial Services, and the
+      Public Sector — from world-first inertia forecasting platforms at GE Digital and National Grid,
+      to ML deployment infrastructure at NatWest, to document automation systems processing land
+      registry submissions at Registers of Scotland. I've spent a lot of time thinking about
+      performance at scale: terabyte-scale data pipelines, sub-second API response times, 99.9% uptime
+      systems.
     </p>
-    
+
     <p>
-      The theme features syntax highlighting with Shiki, customisable colour schemes via
-      <a href="https://panr.github.io/terminal-css/" target="_blank" rel="noopener">Terminal.css</a>,
-      Fira Code monospace font, and a beautiful retro terminal aesthetic.
+      That instinct for low-level performance is what led me to RISC-V. My electronics background
+      means I'm comfortable reasoning about what's happening at the ISA level — register pressure,
+      instruction counts, memory bandwidth — not just what a framework reports. I'm particularly
+      interested in running and optimising large language models on RISC-V hardware, and in how RISC-V
+      integrates with accelerators like vector processing units and NPUs to change the inference
+      performance equation.
     </p>
-    
+
     <p>
-      Ported to Astro by <a href="https://github.com/dennisklappe" target="_blank" rel="noopener">Dennis Klappe</a>.
+      This blog is where I document that work — rigorous, multi-scale evaluation of LLM performance
+      on RISC-V, from classic benchmarks down to microarchitectural profiling. The goal is always to
+      understand exactly where performance is won or lost, and to make decisions grounded in data at
+      every level of the stack.
     </p>
   </div>
 </BaseLayout>

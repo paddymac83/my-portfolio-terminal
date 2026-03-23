@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>4×8 Register Pressure — RISC-V VLEN=256</title>
+<style>
+  /* ── Reset & base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #1a170f;
+  --bg2:       #231f14;
+  --bg3:       #2c271a;
+  --text:      #eceae5;
+  --text2:     #a09d94;
+  --text3:     #6b6860;
+  --border:    rgba(255,157,0,0.12);
+  --border2:   rgba(255,157,0,0.25);
+  --border3:   rgba(255,157,0,0.45);
+  --radius:    0px;
+  --font: "Fira Code", "JetBrains Mono", Monaco, Consolas, "Ubuntu Mono", monospace;
+  --mono: "Fira Code", "JetBrains Mono", Monaco, Consolas, "Ubuntu Mono", monospace;
+}
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:      #1a1a18;
+      --bg2:     #232320;
+      --bg3:     #2c2c2a;
+      --text:    #e8e6de;
+      --text2:   #9c9a92;
+      --text3:   #6b6964;
+      --border:  rgba(255,255,255,0.10);
+      --border2: rgba(255,255,255,0.20);
+      --border3: rgba(255,255,255,0.32);
+    }
+  }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    padding: 2rem 1.5rem;
+    max-width: 820px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  h1 {
+    font-size: 20px;
+    font-weight: 500;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+
+  .subtitle {
+    font-size: 13px;
+    color: var(--text2);
+    margin-bottom: 1.5rem;
+  }
+
+  /* ── Tab buttons ── */
+  .tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+
+  .tab-btn {
+    background: var(--bg2);
+    border: 0.5px solid var(--border2);
+    border-radius: 20px;
+    padding: 5px 16px;
+    font-size: 12px;
+    font-family: var(--font);
+    cursor: pointer;
+    color: var(--text2);
+    transition: all 0.15s;
+  }
+
+  .tab-btn.active {
+    background: var(--bg3);
+    border-color: var(--border3);
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .tab-btn:hover:not(.active) {
+    background: var(--bg3);
+    color: var(--text);
+  }
+
+  /* ── Panels ── */
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* ── Info box ── */
+  .info {
+    background: var(--bg2);
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    font-size: 12px;
+    color: var(--text2);
+    line-height: 1.7;
+  }
+
+  .info strong { color: var(--text); }
+  .info code {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--bg3);
+    border-radius: 3px;
+    padding: 1px 4px;
+  }
+
+  /* ── Table ── */
+  .reg-table {
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 14px;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 220px 80px 60px 80px 1fr;
+    align-items: center;
+    border-bottom: 0.5px solid var(--border);
+    padding: 6px 0;
+  }
+
+  .row:last-child { border-bottom: none; }
+
+  .row.hdr {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text2);
+    border-bottom: 0.5px solid var(--border2);
+    background: var(--bg2);
+    padding: 7px 0;
+  }
+
+  .row.total {
+    border-top: 1.5px solid var(--border3);
+    border-bottom: none;
+    background: var(--bg2);
+    padding: 10px 0;
+  }
+
+  .cell {
+    font-size: 12px;
+    color: var(--text);
+    padding: 0 10px;
+  }
+
+  .cell.muted { color: var(--text2); }
+
+  .cell.eq {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text2);
+  }
+
+  .cell.eq strong { color: var(--text); }
+
+  /* ── Colour tags ── */
+  .tag {
+    display: inline-block;
+    border-radius: 3px;
+    border: 0.5px solid;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  /* light */
+  .tag-sumf  { background:#1a2e1a; border-color:#1D9E75; color:#9FE1CB; }
+  .tag-rhs   { background:#2a1f00; border-color:#ff9d00; color:#ffd080; }
+  .tag-lhs   { background:#2e1a00; border-color:#ffb833; color:#ffe0a0; }
+  .tag-mac   { background:#2e1000; border-color:#ff6b00; color:#ffb380; }
+  .tag-bsc   { background:#1a2000; border-color:#a0c020; color:#d0e890; }
+
+
+  /* ── Bar chart ── */
+  .bars { margin-bottom: 14px; }
+
+  .bar-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 5px;
+  }
+
+  .bar-label {
+    font-size: 11px;
+    color: var(--text2);
+    width: 80px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .bar-wrap {
+    flex: 1;
+    height: 20px;
+    background: var(--bg2);
+    border-radius: 3px;
+    overflow: hidden;
+    border: 0.5px solid var(--border);
+  }
+
+  .bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    padding-left: 8px;
+    font-size: 10px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: width 0.4s ease;
+  }
+
+  /* ── Register grid (panel 2) ── */
+  .reg-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 3px;
+    margin: 8px 0 12px;
+  }
+
+  .reg-cell {
+    border-radius: 3px;
+    border: 0.5px solid;
+    height: 34px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 500;
+    line-height: 1.3;
+    text-align: center;
+    padding: 2px;
+  }
+
+  .reg-cell .vnum {
+    font-size: 8px;
+    font-weight: 400;
+    opacity: 0.7;
+  }
+
+  /* light mode reg colours */
+  .rc-sumf { background:#1a2e1a; border-color:#1D9E75; color:#9FE1CB; }
+  .rc-rhs  { background:#2a1f00; border-color:#ff9d00; color:#ffd080; }
+  .rc-lhs  { background:#2e1a00; border-color:#ffb833; color:#ffe0a0; }
+  .rc-mac  { background:#2e1000; border-color:#ff6b00; color:#ffb380; }
+  .rc-bsc  { background:#1a2000; border-color:#a0c020; color:#d0e890; }
+  .rc-free { background:#231f14; border-color:rgba(255,157,0,0.15); color:#6b6860; }
+
+
+  /* ── Legend ── */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--text2);
+    margin-top: 4px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    border: 0.5px solid;
+    flex-shrink: 0;
+  }
+
+  /* ── Comparison table (panel 3) ── */
+  .compare-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-bottom: 12px;
+  }
+
+  .compare-table th {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text2);
+    text-align: center;
+    padding: 8px 10px;
+    border-bottom: 0.5px solid var(--border2);
+    background: var(--bg2);
+  }
+
+  .compare-table th:first-child { text-align: left; }
+
+  .compare-table td {
+    padding: 8px 10px;
+    text-align: center;
+    border-bottom: 0.5px solid var(--border);
+    color: var(--text);
+  }
+
+  .compare-table td:first-child {
+    text-align: left;
+    color: var(--text2);
+    font-size: 11px;
+  }
+
+  .compare-table tr:last-child td { border-bottom: none; }
+
+  .compare-table td strong { color: var(--text); font-weight: 500; }
+
+  .highlight-col { background: rgba(83,74,183,0.06); }
+
+  @media (prefers-color-scheme: dark) {
+    .highlight-col { background: rgba(127,119,221,0.10); }
+  }
+
+  /* ── LMUL explanation table ── */
+  .lmul-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin: 8px 0;
+  }
+
+  .lmul-table td {
+    padding: 5px 10px;
+    border-bottom: 0.5px solid var(--border);
+    color: var(--text);
+  }
+
+  .lmul-table td:first-child { color: var(--text2); width: 60px; }
+  .lmul-table tr:last-child td { border-bottom: none; }
+
+  /* ── Footer ── */
+  .footer {
+    font-size: 11px;
+    color: var(--text3);
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 0.5px solid var(--border);
+  }
+</style>
+</head>
+<body>
+
+<h1>4×8 Register Pressure — RISC-V Vector, VLEN=256</h1>
+<p class="subtitle">Physical register allocation at peak (inside MAC chain, inner K-block loop)</p>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="show(0)">VLEN=256 basics</button>
+  <button class="tab-btn" onclick="show(1)">4×8 peak allocation</button>
+  <button class="tab-btn" onclick="show(2)">Register map</button>
+  <button class="tab-btn" onclick="show(3)">Tile comparison</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     PANEL 0 — VLEN=256 basics
+═══════════════════════════════════════════════ -->
+<div class="panel active" id="p0">
+  <div class="info">
+    At VLEN=256, each physical vector register holds 256 bits. RISC-V V provides
+    <strong>32 physical vector registers</strong> (v0–v31). LMUL groups consecutive physical registers
+    into one wider logical register.
+  </div>
+
+  <div class="reg-table">
+    <div class="row hdr">
+      <div class="cell">Logical type</div>
+      <div class="cell">LMUL</div>
+      <div class="cell">Phys regs</div>
+      <div class="cell">Elements</div>
+      <div class="cell">Use in kernel</div>
+    </div>
+    <div class="row">
+      <div class="cell"><code style="font-family:var(--mono);font-size:11px">f32m1</code></div>
+      <div class="cell muted">1</div>
+      <div class="cell muted">1</div>
+      <div class="cell muted">8 f32</div>
+      <div class="cell muted">sumf accumulators, b_scales</div>
+    </div>
+    <div class="row">
+      <div class="cell"><code style="font-family:var(--mono);font-size:11px">i8m2</code></div>
+      <div class="cell muted">2</div>
+      <div class="cell muted">2</div>
+      <div class="cell muted">64 i8</div>
+      <div class="cell muted">RHS half-vectors, LHS chunks</div>
+    </div>
+    <div class="row">
+      <div class="cell"><code style="font-family:var(--mono);font-size:11px">i8m4</code></div>
+      <div class="cell muted">4</div>
+      <div class="cell muted">4</div>
+      <div class="cell muted">128 i8</div>
+      <div class="cell muted">raw B block load</div>
+    </div>
+    <div class="row">
+      <div class="cell"><code style="font-family:var(--mono);font-size:11px">i16m4</code></div>
+      <div class="cell muted">4</div>
+      <div class="cell muted">4</div>
+      <div class="cell muted">64 i16</div>
+      <div class="cell muted">MAC accumulator (per row)</div>
+    </div>
+  </div>
+
+  <div class="info">
+    <strong>LMUL = physical register cost.</strong> An <code>i16m4</code> costs 4 physical registers at any VLEN —
+    because widening 64 i8 products into i16 requires 1024 bits = 4 × 256-bit registers. There is no
+    smaller type that fits the MAC accumulator.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     PANEL 1 — 4×8 peak allocation
+═══════════════════════════════════════════════ -->
+<div class="panel" id="p1">
+  <div class="info">
+    Peak pressure occurs inside the MAC chain for one row. All four RHS half-vectors, all four LHS
+    chunks, the MAC accumulator, all four float accumulators, and b_scales must be live simultaneously.
+    Physical registers = <strong>count × LMUL</strong>.
+  </div>
+
+  <div class="reg-table">
+    <div class="row hdr">
+      <div class="cell">Variable</div>
+      <div class="cell">Type</div>
+      <div class="cell">LMUL</div>
+      <div class="cell">Count</div>
+      <div class="cell">Calculation → phys regs</div>
+    </div>
+
+    <div class="row">
+      <div class="cell"><span class="tag tag-sumf">sumf0, sumf1, sumf2, sumf3</span></div>
+      <div class="cell muted">f32m1</div>
+      <div class="cell muted">1</div>
+      <div class="cell muted">4</div>
+      <div class="cell eq">4 × 1 = <strong>4</strong></div>
+    </div>
+
+    <div class="row">
+      <div class="cell"><span class="tag tag-rhs">rhs_lo_0, lo_1, hi_0, hi_1</span></div>
+      <div class="cell muted">i8m2</div>
+      <div class="cell muted">2</div>
+      <div class="cell muted">4</div>
+      <div class="cell eq">4 × 2 = <strong>8</strong></div>
+    </div>
+
+    <div class="row">
+      <div class="cell"><span class="tag tag-lhs">lhs_0_8, lhs_1_8, lhs_2_8, lhs_3_8</span></div>
+      <div class="cell muted">i8m2</div>
+      <div class="cell muted">2</div>
+      <div class="cell muted">4</div>
+      <div class="cell eq">4 × 2 = <strong>8</strong></div>
+    </div>
+
+    <div class="row">
+      <div class="cell"><span class="tag tag-mac">sumi_lX (one row at a time)</span></div>
+      <div class="cell muted">i16m4</div>
+      <div class="cell muted">4</div>
+      <div class="cell muted">1</div>
+      <div class="cell eq">1 × 4 = <strong>4</strong></div>
+    </div>
+
+    <div class="row">
+      <div class="cell"><span class="tag tag-bsc">b_scales_vec</span></div>
+      <div class="cell muted">f32m1</div>
+      <div class="cell muted">1</div>
+      <div class="cell muted">1</div>
+      <div class="cell eq">1 × 1 = <strong>1</strong></div>
+    </div>
+
+    <div class="row total">
+      <div class="cell" style="font-weight:500">Peak total</div>
+      <div class="cell"></div>
+      <div class="cell"></div>
+      <div class="cell"></div>
+      <div class="cell eq" style="font-size:14px">4 + 8 + 8 + 4 + 1 = <strong style="font-size:20px">25</strong> of 32 &nbsp;(7 free)</div>
+    </div>
+  </div>
+
+  <div class="bars">
+    <div class="bar-row">
+      <div class="bar-label">sumf (4)</div>
+      <div class="bar-wrap">
+        <div class="bar-fill" style="width:12.5%;background:#1D9E75;color:#E1F5EE">v0–v3</div>
+      </div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label">RHS (8)</div>
+      <div class="bar-wrap">
+        <div class="bar-fill" style="width:25%;background:#534AB7;color:#EEEDFE">v4–v11</div>
+      </div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label">LHS (8)</div>
+      <div class="bar-wrap">
+        <div class="bar-fill" style="width:25%;background:#BA7517;color:#FAEEDA">v12–v19</div>
+      </div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label">MAC (4)</div>
+      <div class="bar-wrap">
+        <div class="bar-fill" style="width:12.5%;background:#D4537E;color:#FBEAF0">v20–v23</div>
+      </div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label">bscale (1)</div>
+      <div class="bar-wrap">
+        <div class="bar-fill" style="width:3.125%;background:#639922;color:#EAF3DE">v24</div>
+      </div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label">free (7)</div>
+      <div class="bar-wrap">
+        <div class="bar-fill" style="width:21.875%;background:#888780;color:#F1EFE8">v25–v31</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     PANEL 2 — Register map
+═══════════════════════════════════════════════ -->
+<div class="panel" id="p2">
+  <div class="info">
+    All 32 physical registers (v0–v31) mapped at peak — inside the MAC chain for one row.
+    Each cell = one physical register. LMUL=4 groups span 4 consecutive cells.
+  </div>
+
+  <div class="reg-grid" id="regmap"></div>
+
+  <div class="legend">
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#E1F5EE;border-color:#1D9E75"></div>
+      sumf0–3 (4 regs)
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#EEEDFE;border-color:#534AB7"></div>
+      RHS halves (8 regs)
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#FAEEDA;border-color:#BA7517"></div>
+      LHS chunks (8 regs)
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#FBEAF0;border-color:#D4537E"></div>
+      MAC acc i16m4 (4 regs)
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#EAF3DE;border-color:#639922"></div>
+      b_scales (1 reg)
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#f1efea;border-color:#b4b2a9"></div>
+      free (7 regs)
+    </div>
+  </div>
+
+  <div class="info" style="margin-top:12px">
+    <strong>Note:</strong> <code>rhs_raw_vec</code> (the initial <code>i8m4</code> load) is not counted here —
+    by the time the MAC chain begins it has been consumed to produce the four <code>i8m2</code> half-vectors
+    and is no longer live. If the compiler does not immediately reuse its registers, peak pressure could
+    briefly reach 29.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     PANEL 3 — Tile comparison
+═══════════════════════════════════════════════ -->
+<div class="panel" id="p3">
+  <div class="info">
+    Comparing tile strategies. The 4×16 two-pass strategy processes cols 0–7 then cols 8–15 within
+    each K-block iteration, keeping the A block live across both passes. The only additional cost is
+    4 extra <code>f32m1</code> accumulators for the second column group.
+  </div>
+
+  <table class="compare-table">
+    <thead>
+      <tr>
+        <th></th>
+        <th>4×8 baseline</th>
+        <th class="highlight-col">4×16 two-pass</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Output values / tile</td>
+        <td>32</td>
+        <td class="highlight-col"><strong>64</strong></td>
+      </tr>
+      <tr>
+        <td>A loads per K-block</td>
+        <td>1×</td>
+        <td class="highlight-col"><strong>1×</strong> (reused)</td>
+      </tr>
+      <tr>
+        <td>B loads per output value</td>
+        <td>1 / 8 cols</td>
+        <td class="highlight-col"><strong>1 / 16 cols ↓2×</strong></td>
+      </tr>
+      <tr>
+        <td>Peak phys regs used</td>
+        <td>25 / 32</td>
+        <td class="highlight-col"><strong>29 / 32</strong> (tight)</td>
+      </tr>
+      <tr>
+        <td>Free registers</td>
+        <td>7</td>
+        <td class="highlight-col"><strong>3</strong> (spill risk)</td>
+      </tr>
+      <tr>
+        <td>f32 lanes per sumf reg</td>
+        <td>8</td>
+        <td class="highlight-col">8</td>
+      </tr>
+      <tr>
+        <td>Outer x-loop iterations (nc=64)</td>
+        <td>8</td>
+        <td class="highlight-col"><strong>4</strong> (fewer branches)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="info">
+    The 4×16 tile doubles arithmetic intensity with only 4 extra registers — a good trade at VLEN=256.
+    At VLEN=512 a native 4×16 (with <code>vl=64</code>) would cover 16 columns per register naturally,
+    giving the same output count with comfortable headroom and no two-pass complexity.
+  </div>
+</div>
+
+<div class="footer">
+  ggml_gemm_q4_0_8x8_q8_0 · RISC-V Vector · VLEN=256 · register pressure analysis
+</div>
+
+<script>
+  /* ── Tab switching ── */
+  const btns   = document.querySelectorAll('.tab-btn');
+  const panels = document.querySelectorAll('.panel');
+
+  function show(i) {
+    btns.forEach((b, j)   => b.classList.toggle('active', i === j));
+    panels.forEach((p, j) => p.classList.toggle('active', i === j));
+  }
+
+  /* ── Build register grid ── */
+  const regs = [
+    { cls:'rc-sumf', label:'sumf0' },
+    { cls:'rc-sumf', label:'sumf1' },
+    { cls:'rc-sumf', label:'sumf2' },
+    { cls:'rc-sumf', label:'sumf3' },
+    { cls:'rc-rhs',  label:'rhs lo0·a' },
+    { cls:'rc-rhs',  label:'rhs lo0·b' },
+    { cls:'rc-rhs',  label:'rhs lo1·a' },
+    { cls:'rc-rhs',  label:'rhs lo1·b' },
+    { cls:'rc-rhs',  label:'rhs hi0·a' },
+    { cls:'rc-rhs',  label:'rhs hi0·b' },
+    { cls:'rc-rhs',  label:'rhs hi1·a' },
+    { cls:'rc-rhs',  label:'rhs hi1·b' },
+    { cls:'rc-lhs',  label:'lhs 0·a' },
+    { cls:'rc-lhs',  label:'lhs 0·b' },
+    { cls:'rc-lhs',  label:'lhs 1·a' },
+    { cls:'rc-lhs',  label:'lhs 1·b' },
+    { cls:'rc-lhs',  label:'lhs 2·a' },
+    { cls:'rc-lhs',  label:'lhs 2·b' },
+    { cls:'rc-lhs',  label:'lhs 3·a' },
+    { cls:'rc-lhs',  label:'lhs 3·b' },
+    { cls:'rc-mac',  label:'mac·a' },
+    { cls:'rc-mac',  label:'mac·b' },
+    { cls:'rc-mac',  label:'mac·c' },
+    { cls:'rc-mac',  label:'mac·d' },
+    { cls:'rc-bsc',  label:'bscale' },
+    { cls:'rc-free', label:'free' },
+    { cls:'rc-free', label:'free' },
+    { cls:'rc-free', label:'free' },
+    { cls:'rc-free', label:'free' },
+    { cls:'rc-free', label:'free' },
+    { cls:'rc-free', label:'free' },
+    { cls:'rc-free', label:'free' },
+  ];
+
+  const grid = document.getElementById('regmap');
+  regs.forEach((r, i) => {
+    const d = document.createElement('div');
+    d.className = `reg-cell ${r.cls}`;
+    d.innerHTML = `${r.label}<span class="vnum">v${i}</span>`;
+    grid.appendChild(d);
+  });
+</script>
+</body>
+</html>
