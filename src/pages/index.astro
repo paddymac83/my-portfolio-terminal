@@ -14,17 +14,16 @@ const posts = (await getCollection('posts'))
     <h1 id="hello-there">LLMs on RISC-V</h1>
     <p>
       Kernel engineering and performance analysis for LLM inference on RISC-V hardware.
-      This blog documents experiments at every level of the stack — from RVV intrinsics and
-      register pressure analysis, to QEMU emulation, LLVM IR metrics, and cycle-accurate
-      gem5 simulation.
+      This blog documents experiments across both software and hardware modelling — from RVV 
+      intrinsics, register pressure analysis, and LLVM IR metrics, to QEMU emulation and 
+      cycle-accurate gem5 simulation.
     </p>
     <p>
       Current focus: extending llama.cpp GEMM kernels for the RISC-V Vector Extension (RVV),
-      targeting in-order cores representative of the SiFive X280-class edge AI family.
-      Next step: validation on physical hardware — Milk-V Pioneer and StarFive VisionFive 2.
+      validated against both simulated and physical targets.
     </p>
     <p>
-      — <a href="/about/">Paddy McNabb</a> · Senior AI Engineer · Edinburgh
+      — <a href="/about/">Paddy McNabb</a> · AI Engineer · Edinburgh
       · <a href="https://github.com/paddymac83" target="_blank" rel="noopener">GitHub</a>
       · <a href="https://linkedin.com/in/paddy-mcnabb" target="_blank" rel="noopener">LinkedIn</a>
     </p>
