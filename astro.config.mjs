@@ -6,7 +6,7 @@ import rehypeRaw from 'rehype-raw';
 // https://astro.build/config
 export default defineConfig({
   site: 'https://dennisklappe.github.io',
-  base: process.env.NODE_ENV === 'production' ? '/astro-theme-terminal' : '/',
+  base: '/',
   integrations: [sitemap()],
   markdown: {
     shikiConfig: {
