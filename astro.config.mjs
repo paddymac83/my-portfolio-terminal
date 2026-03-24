@@ -5,7 +5,7 @@ import rehypeRaw from 'rehype-raw';
 
 // https://astro.build/config
 export default defineConfig({
-  site: 'https://dennisklappe.github.io',
+  site: 'https://www.tilesmith.dev',
   base: '/',
   integrations: [sitemap()],
   markdown: {
