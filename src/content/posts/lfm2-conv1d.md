@@ -208,6 +208,8 @@ temporary buffer before the MAC loop, replacing `vlse32` with unit-stride `vle32
 problem is that the transpose is itself a strided read — the same access pattern as
 `vlse32` — paid in full as a pre-pass before any vectorised arithmetic begins.
 
+---
+
 ## RVV v3 — scalar gather with unrolled vector MAC
 
 V3 takes a different approach to the strided access problem. Rather than using `vlse32` to
