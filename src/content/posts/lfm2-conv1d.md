@@ -1,5 +1,5 @@
 ---
-title: 'Vectorising Liquid AI LFM2-700M convolution kernel in llama.cpp'
+title: 'Vectorising convolution kernels in llama.cpp'
 description: 'Experimenting with a range of RISC-V vectorisation ops for comparison to the scalar op in llama.cpp.'
 pubDate: 'April 10 2026'
 author: 'Paddy McNabb'
@@ -48,8 +48,7 @@ The product `bx = b × x` makes the convolution input data-dependent — the eff
 
 Inspecting the ggml source confirmed that `ggml_ssm_conv`, implemented in
 `ggml_compute_forward_ssm_conv_f32`, has no RVV fast path — it falls back to a plain
-scalar C loop on all RISC-V targets. Prior to this work, `ggml_compute_forward_ssm_conv` has no
-architecture-specific implementation in llama.cpp. This will be the focus of the rest of this post.
+scalar C loop on all RISC-V targets. This will be the focus of the rest of this post.
 
 ---
 
@@ -109,7 +108,7 @@ in `src1` are used to accumulate the result in `dst`.
 
 ---
 
-## Why the memory layout works against RVV
+## RVV and memory layout
 
 The data arriving at `ggml_ssm_conv` is the result of a fixed sequence of ggml graph operations in `lfm2.cpp`:
 
@@ -134,7 +133,7 @@ channels — the natural strategy for RVV given `conv_dim = 1536` — requires
 loading elements separated by 268 bytes. Later sections explore how this can be achieved using both vector and scalar approaches.
 
 
-## Why the naive RVV approach fails
+## Why the naive RVV approach is inefficient
 
 An obvious choice would be to vectorise the innermost `d_conv` dot product — load 4 floats,
 multiply, reduce to a scalar. A 4-element reduction requires a horizontal `vfredusum`, which is a
