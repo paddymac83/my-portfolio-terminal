@@ -1,0 +1,60 @@
+/* =============================================
+   PER-POST THEME OVERRIDES
+   Applied via data-theme="..." on a wrapper
+   ============================================= */
+
+/* ── Amber (site default, no override needed) ── */
+[data-theme="amber"] {
+  --accent:     #ffa86a;
+  --secondary:  #8be9fd;
+  --comment:    #8a7560;
+  --theme-font: 'Fira Code', monospace;
+}
+
+/* ── Cyan ── */
+[data-theme="cyan"] {
+  --accent:     #8be9fd;
+  --secondary:  #50fa7b;
+  --comment:    #6a9dad;
+  --theme-font: 'JetBrains Mono', monospace;
+}
+
+/* ── Green (classic terminal) ── */
+[data-theme="green"] {
+  --accent:     #50fa7b;
+  --secondary:  #f1fa8c;
+  --comment:    #4d7a5a;
+  --theme-font: 'Courier Prime', monospace;
+}
+
+/* ── Pink ── */
+[data-theme="pink"] {
+  --accent:     #ff79c6;
+  --secondary:  #bd93f9;
+  --comment:    #8a5a75;
+  --theme-font: 'Space Mono', monospace;
+}
+
+/* ── Purple ── */
+[data-theme="purple"] {
+  --accent:     #bd93f9;
+  --secondary:  #ff79c6;
+  --comment:    #6a5a8a;
+  --theme-font: 'IBM Plex Mono', monospace;
+}
+
+/* ── Blue ── */
+[data-theme="blue"] {
+  --accent:     #6272a4;
+  --secondary:  #8be9fd;
+  --comment:    #4a5a7a;
+  --theme-font: 'Roboto Mono', monospace;
+}
+
+/* Apply the per-theme font to headings and links inside a themed block */
+[data-theme] h1,
+[data-theme] h2,
+[data-theme] h3,
+[data-theme] a.post-card__title {
+  font-family: var(--theme-font, var(--font-mono, monospace));
+}

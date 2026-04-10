@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>gem5 Scalar vs RVV — Cache Metrics</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:      #1a170f;
+  --bg2:     #231f14;
+  --bg3:     #2c271a;
+  --text:    #eceae5;
+  --text2:   #a09d94;
+  --text3:   #6b6860;
+  --border:  rgba(255,157,0,0.12);
+  --border2: rgba(255,157,0,0.25);
+  --border3: rgba(255,157,0,0.45);
+  --font:    "Fira Code","JetBrains Mono",Monaco,Consolas,"Ubuntu Mono",monospace;
+
+  --teal-bg:#04241c; --teal-b:#1D9E75; --teal-t:#9FE1CB;
+  --purp-bg:#1c1a3a; --purp-b:#534AB7; --purp-t:#CCC9F6;
+  --red-bg: #2e0d0d; --red-b: #A32D2D; --red-t: #F7C1C1;
+  --ambe-bg:#2e1f00; --ambe-b:#BA7517; --ambe-t:#FAC775;
+  --good:   #1D9E75;
+  --bad:    #D4537E;
+  --neut:   #a09d94;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  padding: 2rem 1.5rem 3rem;
+  max-width: 860px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
+.subtitle { font-size: 12px; color: var(--text3); margin-bottom: 1.5rem; }
+
+/* Tab buttons */
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+.tab-btn {
+  background: var(--bg2); border: 0.5px solid var(--border2);
+  padding: 5px 16px; font-size: 12px; font-family: var(--font);
+  cursor: pointer; color: var(--text2); transition: all .15s;
+}
+.tab-btn.active { background: var(--bg3); border-color: var(--border3); color: var(--text); font-weight: 500; }
+.tab-btn:hover:not(.active) { background: var(--bg3); color: var(--text); }
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* Main metrics table */
+.metrics-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 16px; }
+.metrics-table thead tr {
+  background: var(--bg2);
+  border-bottom: 0.5px solid var(--border2);
+}
+.metrics-table th {
+  padding: 8px 12px; font-size: 11px; font-weight: 500; color: var(--text2);
+  text-align: right; white-space: nowrap;
+}
+.metrics-table th:first-child { text-align: left; }
+.metrics-table tbody tr { border-bottom: 0.5px solid var(--border); transition: background .12s; }
+.metrics-table tbody tr:hover { background: var(--bg2); }
+.metrics-table td { padding: 7px 12px; text-align: right; color: var(--text); white-space: nowrap; }
+.metrics-table td:first-child { text-align: left; color: var(--text2); font-size: 11px; }
+
+/* Section divider rows */
+.section-hdr td {
+  background: var(--bg2) !important;
+  color: var(--text3) !important;
+  font-size: 10px !important;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  padding: 5px 12px !important;
+  border-top: 0.5px solid var(--border2) !important;
+}
+
+/* Delta badges */
+.delta {
+  display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 500;
+  padding: 1px 7px; border: 0.5px solid;
+}
+.delta-bad  { background: var(--red-bg);  border-color: var(--red-b);  color: var(--red-t);  }
+.delta-good { background: var(--teal-bg); border-color: var(--teal-b); color: var(--teal-t); }
+.delta-neut { background: var(--bg3);     border-color: var(--border2); color: var(--text2); }
+
+/* Value columns */
+.val-scalar { color: var(--text);  }
+.val-rvv    { color: #ffd080; }
+
+/* Highlight rows */
+.row-focus td { background: rgba(255,157,0,0.04) !important; }
+.row-focus td:first-child { color: var(--text) !important; font-weight: 500; }
+
+/* Bar section */
+.bar-section { margin-bottom: 18px; }
+.bar-group { margin-bottom: 10px; }
+.bar-label {
+  font-size: 11px; color: var(--text2); margin-bottom: 4px;
+  display: flex; justify-content: space-between; align-items: baseline;
+}
+.bar-label span { font-size: 10px; color: var(--text3); }
+.bar-track {
+  height: 18px; background: var(--bg2); border: 0.5px solid var(--border);
+  overflow: hidden; position: relative;
+}
+.bar-fill {
+  height: 100%; display: flex; align-items: center; padding-left: 8px;
+  font-size: 10px; font-weight: 500; white-space: nowrap;
+  transition: width .5s ease;
+}
+.bar-scalar { background: var(--teal-bg); border-right: 1px solid var(--teal-b); color: var(--teal-t); }
+.bar-rvv    { background: var(--purp-bg); border-right: 1px solid var(--purp-b); color: var(--purp-t); }
+.bar-miss-s { background: var(--teal-bg); border-right: 1px solid var(--teal-b); color: var(--teal-t); }
+.bar-miss-r { background: var(--red-bg);  border-right: 1px solid var(--red-b);  color: var(--red-t);  }
+.bar-wb-s   { background: var(--ambe-bg); border-right: 1px solid var(--ambe-b); color: var(--ambe-t); }
+.bar-wb-r   { background: var(--red-bg);  border-right: 1px solid var(--red-b);  color: var(--red-t);  }
+
+/* Info boxes */
+.info-box {
+  background: var(--bg2); border: 0.5px solid var(--border2);
+  padding: 12px 14px; margin-bottom: 10px;
+  font-size: 12px; color: var(--text2); line-height: 1.75;
+}
+.info-box strong { color: var(--text); font-weight: 500; }
+.info-box code {
+  font-family: var(--font); font-size: 11px;
+  background: var(--bg3); padding: 1px 5px;
+}
+.info-box .verdict {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 500; margin-bottom: 6px;
+}
+.verdict-bad  { color: var(--red-t); }
+.verdict-good { color: var(--teal-t); }
+.verdict-neut { color: var(--ambe-t); }
+
+/* Annotation dot */
+.dot-bad  { width:8px; height:8px; background:var(--red-b);  flex-shrink:0; }
+.dot-good { width:8px; height:8px; background:var(--teal-b); flex-shrink:0; }
+.dot-neut { width:8px; height:8px; background:var(--ambe-b); flex-shrink:0; }
+
+/* Footer */
+.footer { font-size: 11px; color: var(--text3); margin-top: 2rem; padding-top: 1rem; border-top: 0.5px solid var(--border); }
+</style>
+</head>
+<body>
+
+<h1>gem5 simulation — scalar vs RVV cache metrics</h1>
+<p class="subtitle">SpacemiT X60 · VLEN=256 · ggml_compute_forward_ssm_conv_f32 · LFM2-700M d_inner=3072 d_conv=4</p>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="show(0)">full table</button>
+  <button class="tab-btn" onclick="show(1)">access pressure</button>
+  <button class="tab-btn" onclick="show(2)">miss behaviour</button>
+  <button class="tab-btn" onclick="show(3)">analysis</button>
+</div>
+
+<!-- ── PANEL 0: full table ── -->
+<div class="panel active" id="p0">
+  <table class="metrics-table">
+    <thead>
+      <tr>
+        <th>metric</th>
+        <th>scalar</th>
+        <th>RVV</th>
+        <th>delta</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="section-hdr"><td colspan="4">execution</td></tr>
+      <tr>
+        <td>cycles</td>
+        <td class="val-scalar">662,063</td>
+        <td class="val-rvv">792,548</td>
+        <td><span class="delta delta-bad">+19.7%</span></td>
+      </tr>
+      <tr>
+        <td>IPC</td>
+        <td class="val-scalar">0.375</td>
+        <td class="val-rvv">0.282</td>
+        <td><span class="delta delta-bad">−24.8%</span></td>
+      </tr>
+
+      <tr class="section-hdr"><td colspan="4">L1D cache</td></tr>
+      <tr class="row-focus">
+        <td>L1D accesses</td>
+        <td class="val-scalar">56,221</td>
+        <td class="val-rvv">104,351</td>
+        <td><span class="delta delta-bad">+85.6%</span></td>
+      </tr>
+      <tr class="row-focus">
+        <td>L1D misses</td>
+        <td class="val-scalar">3,244</td>
+        <td class="val-rvv">7,733</td>
+        <td><span class="delta delta-bad">+138.4%</span></td>
+      </tr>
+      <tr>
+        <td>L1D miss rate</td>
+        <td class="val-scalar">5.77%</td>
+        <td class="val-rvv">7.41%</td>
+        <td><span class="delta delta-bad">+1.64pp</span></td>
+      </tr>
+      <tr>
+        <td>L1D avg miss latency (ticks)</td>
+        <td class="val-scalar">39,409</td>
+        <td class="val-rvv">21,063</td>
+        <td><span class="delta delta-good">−46.5%</span></td>
+      </tr>
+
+      <tr class="section-hdr"><td colspan="4">L2 cache</td></tr>
+      <tr>
+        <td>L2 miss rate (data)</td>
+        <td class="val-scalar">54.6%</td>
+        <td class="val-rvv">22.9%</td>
+        <td><span class="delta delta-good">−31.7pp</span></td>
+      </tr>
+      <tr class="row-focus">
+        <td>L2 bus bytes</td>
+        <td class="val-scalar">329,792</td>
+        <td class="val-rvv">904,384</td>
+        <td><span class="delta delta-bad">+174.2%</span></td>
+      </tr>
+      <tr class="row-focus">
+        <td>writebacks</td>
+        <td class="val-scalar">1,906</td>
+        <td class="val-rvv">6,395</td>
+        <td><span class="delta delta-bad">+235.6%</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── PANEL 1: access pressure ── -->
+<div class="panel" id="p1">
+  <div class="bar-section">
+    <div class="bar-group">
+      <div class="bar-label">L1D accesses<span>scalar 56,221 vs RVV 104,351</span></div>
+      <div class="bar-track" style="margin-bottom:3px">
+        <div class="bar-fill bar-scalar" style="width:53.9%">scalar  56k</div>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill bar-rvv" style="width:100%">RVV  104k  (+85.6%)</div>
+      </div>
+    </div>
+
+    <div class="bar-group">
+      <div class="bar-label">L2 bus bytes transferred<span>scalar 330k vs RVV 904k</span></div>
+      <div class="bar-track" style="margin-bottom:3px">
+        <div class="bar-fill bar-scalar" style="width:36.5%">scalar  330k</div>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill bar-rvv" style="width:100%">RVV  904k  (+174.2%)</div>
+      </div>
+    </div>
+
+    <div class="bar-group">
+      <div class="bar-label">writebacks (dirty evictions)<span>scalar 1,906 vs RVV 6,395</span></div>
+      <div class="bar-track" style="margin-bottom:3px">
+        <div class="bar-fill bar-wb-s" style="width:29.8%">scalar  1,906</div>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill bar-wb-r" style="width:100%">RVV  6,395  (+235.6%)</div>
+      </div>
+    </div>
+
+    <div class="bar-group">
+      <div class="bar-label">cycles<span>scalar 662k vs RVV 793k</span></div>
+      <div class="bar-track" style="margin-bottom:3px">
+        <div class="bar-fill bar-scalar" style="width:83.5%">scalar  662k</div>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill bar-rvv" style="width:100%">RVV  793k  (+19.7%)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-box">
+    <strong>Why 2× the accesses?</strong><br>
+    One <code>vlse32</code> with stride 76 bytes touches 32 elements — each on a separate 64-byte cache line.
+    Scalar accesses the same data sequentially; the prefetcher hides latency. RVV forces
+    the memory subsystem to service 32 simultaneous cache-line requests per instruction.
+    More accesses, more bus traffic, more dirty evictions.
+  </div>
+</div>
+
+<!-- ── PANEL 2: miss behaviour ── -->
+<div class="panel" id="p2">
+  <div class="bar-section">
+    <div class="bar-group">
+      <div class="bar-label">L1D miss rate<span>scalar 5.77% vs RVV 7.41%</span></div>
+      <div class="bar-track" style="margin-bottom:3px">
+        <div class="bar-fill bar-miss-s" style="width:77.9%">scalar  5.77%</div>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill bar-miss-r" style="width:100%">RVV  7.41%</div>
+      </div>
+    </div>
+
+    <div class="bar-group">
+      <div class="bar-label">L2 miss rate (data)<span>scalar 54.6% vs RVV 22.9%</span></div>
+      <div class="bar-track" style="margin-bottom:3px">
+        <div class="bar-fill bar-miss-r" style="width:100%">scalar  54.6%</div>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill bar-miss-s" style="width:41.9%">RVV  22.9%</div>
+      </div>
+    </div>
+
+    <div class="bar-group">
+      <div class="bar-label">L1D avg miss latency (ticks)<span>scalar 39,409 vs RVV 21,063</span></div>
+      <div class="bar-track" style="margin-bottom:3px">
+        <div class="bar-fill bar-miss-r" style="width:100%">scalar  39,409 ticks</div>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill bar-miss-s" style="width:53.4%">RVV  21,063 ticks</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-box">
+    <div class="verdict verdict-neut"><div class="dot-neut"></div>RVV has better L2 reuse but worse L1D bandwidth</div>
+    The strided loads bring in more cache lines per instruction; those lines get reused within L2,
+    so the L2 miss rate drops from 54.6% to 22.9%. When a miss does reach L2, it resolves faster —
+    hence the lower avg L1D miss latency for RVV. The problem is not L2 capacity: it is
+    <strong>L1D bandwidth saturation</strong>. Strided loads are displacing the scalar working set from L1D,
+    forcing dirty evictions (3.4× more writebacks) and re-fetches.
+  </div>
+</div>
+
+<!-- ── PANEL 3: analysis ── -->
+<div class="panel" id="p3">
+  <div class="info-box">
+    <div class="verdict verdict-bad"><div class="dot-bad"></div>Core problem — L1D access doubling</div>
+    RVV generates 104k L1D accesses vs scalar's 56k — nearly 2×. This is <code>vlse32</code> working
+    exactly as designed but against the wrong memory layout. Each <code>vlse32</code> instruction touches
+    32 elements separated by 76 bytes, fetching across 32 different cache lines in a single instruction.
+    The scalar loop accesses the same data but sequentially, allowing the prefetcher to hide latency.
+  </div>
+
+  <div class="info-box">
+    <div class="verdict verdict-good"><div class="dot-good"></div>Counterintuitive — L2 miss rate is better under RVV</div>
+    Scalar L2 data miss rate is 54.6% vs RVV's 22.9% — RVV actually has better L2 reuse.
+    This makes sense: the strided loads bring in more cache lines per instruction, and those lines
+    get reused within L2. The problem is not L2 capacity — it is L1D bandwidth saturation.
+  </div>
+
+  <div class="info-box">
+    <div class="verdict verdict-bad"><div class="dot-bad"></div>Writeback explosion confirms cache thrashing</div>
+    RVV generates 6,395 writebacks vs scalar's 1,906 — <strong>3.4× more dirty evictions</strong>.
+    The strided loads are displacing clean working-set data from L1D, forcing it to be written
+    back to L2 and then re-fetched on subsequent iterations.
+  </div>
+
+  <div class="info-box">
+    <div class="verdict verdict-neut"><div class="dot-neut"></div>Lower avg miss latency for RVV is not a win</div>
+    RVV's L1D avg miss latency is 21k ticks vs scalar's 39k. This looks like an improvement but
+    is an artefact: misses that reach L2 are finding data there (22.9% L2 miss rate vs 54.6%),
+    so the L2→L1D fill is faster on average. The absolute miss count is still 2.4× higher.
+    <br><br>
+    <strong>Root cause:</strong> layout mismatch. <code>conv_x</code> stride exceeds one cache line.
+    Fix: transpose so <code>d_conv</code> is the contiguous axis → <code>vlse32</code> becomes
+    <code>vle32</code> → unit-stride → prefetcher works → L1D pressure collapses.
+  </div>
+</div>
+
+<div class="footer">gem5 simulation · SpacemiT X60 · RVV1.0 VLEN=256 · ggml_ssm_conv · LFM2-700M</div>
+
+<script>
+const btns   = document.querySelectorAll('.tab-btn');
+const panels = document.querySelectorAll('.panel');
+function show(i){
+  btns.forEach((b,j)=>b.classList.toggle('active',i===j));
+  panels.forEach((p,j)=>p.classList.toggle('active',i===j));
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSM conv kernel — RVV</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:      #1a170f;
+  --bg2:     #231f14;
+  --bg3:     #2c271a;
+  --text:    #eceae5;
+  --text2:   #a09d94;
+  --text3:   #6b6860;
+  --border:  rgba(255,157,0,0.12);
+  --border2: rgba(255,157,0,0.25);
+  --border3: rgba(255,157,0,0.45);
+  --radius:  0px;
+  --font:    "Fira Code","JetBrains Mono",Monaco,Consolas,"Ubuntu Mono",monospace;
+
+  --ct-bg:#04241c; --ct-b:#1D9E75; --ct-t:#9FE1CB;
+  --ct-hbg:#0d5c40; --ct-hb:#5DCAA5; --ct-ht:#E1F5EE;
+  --cp-bg:#1c1a3a; --cp-b:#534AB7; --cp-t:#CCC9F6;
+  --cp-hbg:#3c3489; --cp-hb:#AFA9EC; --cp-ht:#EEEDFE;
+  --ca-bg:#2e1f00; --ca-b:#BA7517; --ca-t:#FAC775;
+  --ca-hbg:#7a4a00; --ca-hb:#EF9F27; --ca-ht:#FAEEDA;
+  --cb-bg:#0a1e36; --cb-b:#185FA5; --cb-t:#85B7EB;
+  --cb-hbg:#0c447c; --cb-hb:#378ADD; --cb-ht:#E6F1FB;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  padding: 2rem 1.5rem 3rem;
+  max-width: 900px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
+.subtitle { font-size: 12px; color: var(--text3); margin-bottom: 1.5rem; }
+
+/* Progress */
+.progress { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.dot {
+  width: 9px; height: 9px; border-radius: 0;
+  background: var(--border2); transition: background .2s; flex-shrink: 0;
+}
+.dot.done { background: #1D9E75; }
+.dot.cur  { background: #ff9d00; }
+.step-lbl { font-size: 11px; font-weight: 500; color: var(--text); margin-left: 8px; }
+
+/* Legend */
+.legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.leg-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text2); }
+.leg-sw { width: 11px; height: 11px; border-radius: 0; flex-shrink: 0; }
+
+/* Layout */
+.main-layout { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+.left-col { flex: 2; min-width: 280px; }
+.right-col { min-width: 210px; flex: 1; }
+
+/* Cell */
+.cell {
+  width: 42px; height: 27px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius); font-size: 9px; font-family: var(--font);
+  border: 0.5px solid transparent;
+  transition: background .18s, color .18s, border-color .18s;
+  flex-shrink: 0;
+}
+.grid-row { display: flex; gap: 3px; margin-bottom: 3px; }
+
+.c-t  { background:var(--ct-bg); color:var(--ct-t); border-color:var(--ct-b); }
+.c-p  { background:var(--cp-bg); color:var(--cp-t); border-color:var(--cp-b); }
+.c-a  { background:var(--ca-bg); color:var(--ca-t); border-color:var(--ca-b); }
+.c-b  { background:var(--cb-bg); color:var(--cb-t); border-color:var(--cb-b); }
+.c-th { background:var(--ct-hbg) !important; color:var(--ct-ht) !important; border-color:var(--ct-hb) !important; border-width:1px !important; }
+.c-ph { background:var(--cp-hbg) !important; color:var(--cp-ht) !important; border-color:var(--cp-hb) !important; border-width:1px !important; }
+.c-ah { background:var(--ca-hbg) !important; color:var(--ca-ht) !important; border-color:var(--ca-hb) !important; border-width:1px !important; }
+.c-bh { background:var(--cb-hbg) !important; color:var(--cb-ht) !important; border-color:var(--cb-hb) !important; border-width:1px !important; }
+
+/* vsum wide cell */
+.vcell {
+  height: 27px; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius); font-size: 10px; font-family: var(--font);
+  border: 0.5px solid transparent; transition: background .18s, color .18s;
+}
+
+/* Section label */
+.sec { font-size: 12px; font-weight: 500; color: var(--text); margin: 12px 0 2px; }
+.sec-s { font-size: 10px; color: var(--text3); margin-bottom: 6px; }
+.sep { margin-bottom: 12px; }
+
+/* Col axis */
+.col-axis { display: flex; gap: 3px; margin-bottom: 3px; }
+.col-lbl {
+  width: 42px; text-align: center; font-size: 9px;
+  color: var(--text3); transition: color .2s, font-weight .2s; flex-shrink: 0;
+}
+
+/* Code box */
+.code-box {
+  background: var(--bg2);
+  border: 0.5px solid var(--border2);
+  padding: 10px 12px;
+  font-family: var(--font); font-size: 10.5px; line-height: 1.7;
+  color: var(--text); white-space: pre; overflow-x: auto;
+  min-height: 56px;
+}
+.code-box.dim { opacity: 0.5; }
+
+/* Info box */
+.info-box {
+  background: var(--bg2); border: 0.5px solid var(--border2);
+  padding: 10px 12px; margin-bottom: 14px;
+  font-size: 11px; color: var(--text2); line-height: 1.7;
+}
+.info-box strong { color: var(--text); font-weight: 500; }
+
+/* MAC note */
+.mac-note { font-size: 10px; color: var(--text2); line-height: 1.5; min-height: 14px; margin-top: 5px; }
+
+/* While badge */
+.while-badge { font-size: 10px; color: var(--text3); margin-top: 10px; min-height: 14px; }
+
+/* Buttons */
+.btn-row { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center; }
+button {
+  font-family: var(--font); font-size: 12px;
+  padding: 5px 14px;
+  border: 0.5px solid var(--border2);
+  background: var(--bg2); color: var(--text2);
+  cursor: pointer; transition: background .15s, color .15s;
+}
+button:hover { background: var(--bg3); color: var(--text); }
+button:disabled { opacity: 0.3; cursor: default; }
+button.play-btn { border-color: rgba(255,157,0,0.45); color: #ffd080; }
+
+.sidx { font-size: 11px; color: var(--text3); margin-left: 4px; }
+
+/* Footer */
+.footer { font-size: 11px; color: var(--text3); margin-top: 2rem; padding-top: 1rem; border-top: 0.5px solid var(--border); }
+
+hr { border: none; border-top: 0.5px solid var(--border); margin: 10px 0; }
+</style>
+</head>
+<body>
+
+<h1>SSM conv kernel — RVV vectorised</h1>
+<p class="subtitle">ggml_compute_forward_ssm_conv_f32_rvv · RISC-V Vector · LMUL=m4 · vl=4 · SpacemiT X60 VLEN=256</p>
+
+<div class="progress">
+  <div id="dots" style="display:flex;gap:5px;align-items:center"></div>
+  <span class="step-lbl" id="step-lbl">—</span>
+</div>
+
+<div class="legend">
+  <div class="leg-item"><div class="leg-sw" style="background:#0d5c40;border:1px solid #5DCAA5"></div>conv_x active column</div>
+  <div class="leg-item"><div class="leg-sw" style="background:#3c3489;border:1px solid #AFA9EC"></div>weight active column</div>
+  <div class="leg-item"><div class="leg-sw" style="background:#0c447c;border:1px solid #378ADD"></div>vsum lanes</div>
+  <div class="leg-item"><div class="leg-sw" style="background:#7a4a00;border:1px solid #EF9F27"></div>output stored</div>
+</div>
+
+<div class="main-layout">
+
+  <div class="left-col">
+    <div class="sec">conv_x (src0)</div>
+    <div class="sec-s">vlse32 stride = ncs×4 bytes — gathers same column from all vl rows</div>
+    <div class="col-axis" id="cx-axis"></div>
+    <div id="cx-grid"></div>
+
+    <div class="sep"></div>
+
+    <div class="sec">weights (src1)</div>
+    <div class="sec-s">vlse32 stride = nc×4 bytes</div>
+    <div class="col-axis" id="w-axis"></div>
+    <div id="w-grid"></div>
+
+    <div class="sep"></div>
+
+    <div class="sec">output (dst)</div>
+    <div class="sec-s">vse32 — one instruction writes all vl lanes</div>
+    <div id="o-grid"></div>
+  </div>
+
+  <div class="right-col">
+    <div class="sec" style="margin-top:0">vsum register</div>
+    <div class="sec-s">LMUL=m4 · vl=4 lanes · f32</div>
+    <div id="vreg"></div>
+    <div class="mac-note" id="mac-note"></div>
+
+    <div class="sec" style="margin-top:14px">RVV instruction</div>
+    <div class="code-box" id="rvv-box">—</div>
+
+    <div class="sec" style="margin-top:10px">Scalar equivalent</div>
+    <div class="code-box dim" id="sc-box">—</div>
+
+    <div class="while-badge" id="while-badge"></div>
+  </div>
+</div>
+
+<div class="btn-row">
+  <button id="prev-btn" onclick="nav(-1)" disabled>← prev</button>
+  <button id="next-btn" onclick="nav(1)">next →</button>
+  <button class="play-btn" id="play-btn" onclick="togglePlay()">play ▶</button>
+  <span class="sidx" id="sidx">1 / 6</span>
+</div>
+
+<div class="footer">ggml_compute_forward_ssm_conv_f32_rvv · RISC-V Vector · VLEN=256 · LMUL=m4</div>
+
+<script>
+const NC=4,VL=4;
+const CX=Array.from({length:VL},(_,d)=>Array.from({length:NC},(_,t)=>parseFloat(((Math.sin(d*1.3+t*0.8)*0.5+0.5)*0.9+0.05).toFixed(2))));
+const WW=Array.from({length:VL},(_,d)=>Array.from({length:NC},(_,k)=>parseFloat(((Math.cos(d*1.7+k*1.1)*0.4+0.1)).toFixed(2))));
+function getVsum(n){const v=[0,0,0,0];for(let k=0;k<n;k++)for(let d=0;d<VL;d++)v[d]+=CX[d][k]*WW[d][k];return v;}
+
+const STAGES=[
+  {lbl:'init — vsetvl + vfmv_v_f',i0:-1,store:false,
+   rvv:'vl   = __riscv_vsetvl_e32m4(rows_left=4)\nvsum = __riscv_vfmv_v_f_f32m4(0.0f, vl)',
+   sc: '// scalar: init per row\nfor (int d = 0; d < ir; d++)\n  sumf = 0.0f;',
+   note:'Hardware sets vl=4: all 4 rows fit in m4 register groups'},
+  {lbl:'i0=0 — tap 0 of d_conv',i0:0,store:false,
+   rvv:'vs   = vlse32(s+0, ncs*4, vl)  // gather col 0\nvc   = vlse32(c+0, nc*4,  vl)  // gather col 0\nvsum = vfmacc(vsum, vs, vc, vl) // 4 MACs',
+   sc: 'for (d=0; d<4; d++)\n  sumf += s[0+d*ncs] * c[0+d*nc];',
+   note:'3 RVV instructions replace 4 scalar loop iterations'},
+  {lbl:'i0=1 — tap 1 of d_conv',i0:1,store:false,
+   rvv:'vs   = vlse32(s+1, ncs*4, vl)\nvc   = vlse32(c+1, nc*4,  vl)\nvsum = vfmacc(vsum, vs, vc, vl)',
+   sc: 'for (d=0; d<4; d++)\n  sumf += s[1+d*ncs] * c[1+d*nc];',
+   note:'Running vsum updated for all 4 lanes in one vfmacc'},
+  {lbl:'i0=2 — tap 2 of d_conv',i0:2,store:false,
+   rvv:'vs   = vlse32(s+2, ncs*4, vl)\nvc   = vlse32(c+2, nc*4,  vl)\nvsum = vfmacc(vsum, vs, vc, vl)',
+   sc: 'for (d=0; d<4; d++)\n  sumf += s[2+d*ncs] * c[2+d*nc];',
+   note:''},
+  {lbl:'i0=3 — tap 3 of d_conv',i0:3,store:false,
+   rvv:'vs   = vlse32(s+3, ncs*4, vl)\nvc   = vlse32(c+3, nc*4,  vl)\nvsum = vfmacc(vsum, vs, vc, vl)',
+   sc: 'for (d=0; d<4; d++)\n  sumf += s[3+d*ncs] * c[3+d*nc];',
+   note:'All d_conv=4 taps done — ready to store'},
+  {lbl:'vse32 — store vl=4 outputs',i0:-1,store:true,
+   rvv:'__riscv_vse32_v_f32m4(x+i1, vsum, vl)\ni1        += vl   // advance by 4\nrows_left -= vl   // → 0, exit while',
+   sc: '// scalar: 4 separate stores\nfor (d=0; d<4; d++) x[d] = sumf;\ni1++;  // ×4',
+   note:'1 vse32 instruction stores 4 float results simultaneously'},
+];
+
+// Build axes
+function buildAxis(id,n,pfx){
+  const el=document.getElementById(id);
+  for(let i=0;i<n;i++){
+    const d=document.createElement('div');d.className='col-lbl';
+    d.id=id+'_'+i;d.textContent=pfx+i;el.appendChild(d);
+  }
+}
+buildAxis('cx-axis',NC,'k');
+buildAxis('w-axis',NC,'k');
+
+// Build grids
+function buildGrid(id,rows,cols,cls){
+  const el=document.getElementById(id),all=[];
+  for(let r=0;r<rows;r++){
+    const row=document.createElement('div');row.className='grid-row';const rc=[];
+    for(let c=0;c<cols;c++){const cell=document.createElement('div');cell.className='cell '+cls;row.appendChild(cell);rc.push(cell);}
+    el.appendChild(row);all.push(rc);
+  }
+  return all;
+}
+const cxG=buildGrid('cx-grid',VL,NC,'c-t');
+const wG =buildGrid('w-grid', VL,NC,'c-p');
+const oG =buildGrid('o-grid', VL,1, 'c-a');
+for(let d=0;d<VL;d++){
+  for(let k=0;k<NC;k++){cxG[d][k].textContent=CX[d][k];wG[d][k].textContent=WW[d][k];}
+  oG[d][0].textContent='—';
+}
+
+// vsum register
+const vreg=document.getElementById('vreg');
+const vCells=[];
+for(let d=0;d<VL;d++){
+  const row=document.createElement('div');
+  row.style.cssText='display:flex;align-items:center;gap:6px;margin-bottom:3px';
+  const lbl=document.createElement('span');
+  lbl.style.cssText='font-size:9px;color:var(--text3);width:20px;flex-shrink:0';
+  lbl.textContent='['+d+']';
+  const vc=document.createElement('div');
+  vc.className='vcell c-b';vc.style.cssText='flex:1;min-width:0';vc.textContent='0.000';
+  row.appendChild(lbl);row.appendChild(vc);vreg.appendChild(row);vCells.push(vc);
+}
+
+// Progress dots
+const dotsEl=document.getElementById('dots');
+const dots=[];
+for(let i=0;i<STAGES.length;i++){
+  const d=document.createElement('div');d.className='dot';dotsEl.appendChild(d);dots.push(d);
+}
+
+let cur=0,playing=false,timer=null;
+
+function update(){
+  const st=STAGES[cur];
+  const taps=st.i0>=0?st.i0+1:(st.store?NC:0);
+  const vsum=getVsum(taps);
+
+  dots.forEach((d,i)=>{d.className='dot'+(i===cur?' cur':i<cur?' done':'');});
+  document.getElementById('step-lbl').textContent=st.lbl;
+  document.getElementById('sidx').textContent=(cur+1)+' / '+STAGES.length;
+
+  for(let d=0;d<VL;d++){
+    for(let k=0;k<NC;k++){cxG[d][k].className='cell c-t';wG[d][k].className='cell c-p';}
+    oG[d][0].className='cell c-a';
+    vCells[d].className='vcell c-b';
+  }
+
+  if(st.i0>=0){
+    for(let d=0;d<VL;d++){
+      cxG[d][st.i0].className='cell c-th';
+      wG[d][st.i0].className='cell c-ph';
+      vCells[d].className='vcell c-bh';
+      vCells[d].textContent=vsum[d].toFixed(3);
+      oG[d][0].textContent='—';
+    }
+  } else if(st.store){
+    for(let d=0;d<VL;d++){
+      oG[d][0].className='cell c-ah';
+      oG[d][0].textContent=vsum[d].toFixed(3);
+      vCells[d].textContent=vsum[d].toFixed(3);
+    }
+  } else {
+    for(let d=0;d<VL;d++){vCells[d].textContent='0.000';oG[d][0].textContent='—';}
+  }
+
+  for(let k=0;k<NC;k++){
+    const cxa=document.getElementById('cx-axis_'+k);
+    const wa =document.getElementById('w-axis_'+k);
+    const active=k===st.i0;
+    if(cxa){cxa.style.color=active?'#5DCAA5':'var(--text3)';cxa.style.fontWeight=active?'700':'400';}
+    if(wa) {wa.style.color =active?'#AFA9EC':'var(--text3)';wa.style.fontWeight =active?'700':'400';}
+  }
+
+  document.getElementById('rvv-box').textContent=st.rvv;
+  document.getElementById('sc-box').textContent=st.sc;
+  document.getElementById('mac-note').textContent=st.note;
+  document.getElementById('while-badge').textContent=
+    'rows_left='+(st.store?0:VL)+' | MACs: '+(taps*VL)+'/'+(NC*VL);
+
+  document.getElementById('prev-btn').disabled=cur===0;
+  document.getElementById('next-btn').disabled=cur===STAGES.length-1;
+  document.getElementById('play-btn').textContent=playing?'pause ▐▐':'play ▶';
+}
+
+function nav(d){cur=Math.max(0,Math.min(STAGES.length-1,cur+d));update();}
+function togglePlay(){
+  playing=!playing;
+  if(playing){timer=setInterval(()=>{if(cur>=STAGES.length-1){playing=false;clearInterval(timer);update();return;}nav(1);},1500);}
+  else clearInterval(timer);
+  update();
+}
+update();
+</script>
+</body>
+</html>

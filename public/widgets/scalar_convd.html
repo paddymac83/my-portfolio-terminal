@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSM conv kernel — scalar</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:      #1a170f;
+  --bg2:     #231f14;
+  --bg3:     #2c271a;
+  --text:    #eceae5;
+  --text2:   #a09d94;
+  --text3:   #6b6860;
+  --border:  rgba(255,157,0,0.12);
+  --border2: rgba(255,157,0,0.25);
+  --border3: rgba(255,157,0,0.45);
+  --radius:  0px;
+  --font:    "Fira Code","JetBrains Mono",Monaco,Consolas,"Ubuntu Mono",monospace;
+
+  /* teal = conv_x */
+  --ct-bg:  #04241c; --ct-b: #1D9E75; --ct-t: #9FE1CB;
+  --ct-hbg: #0d5c40; --ct-hb: #5DCAA5; --ct-ht: #E1F5EE;
+  /* purple = weights */
+  --cp-bg:  #1c1a3a; --cp-b: #534AB7; --cp-t: #CCC9F6;
+  --cp-hbg: #3c3489; --cp-hb: #AFA9EC; --cp-ht: #EEEDFE;
+  /* amber = output */
+  --ca-bg:  #2e1f00; --ca-b: #BA7517; --ca-t: #FAC775;
+  --ca-hbg: #7a4a00; --ca-hb: #EF9F27; --ca-ht: #FAEEDA;
+  /* blue = vsum/info */
+  --cb-bg:  #0a1e36; --cb-b: #185FA5; --cb-t: #85B7EB;
+  --cb-hbg: #0c447c; --cb-hb: #378ADD; --cb-ht: #E6F1FB;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  padding: 2rem 1.5rem 3rem;
+  max-width: 860px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
+.subtitle { font-size: 12px; color: var(--text3); margin-bottom: 1.5rem; }
+
+/* Legend pills */
+.legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-family: var(--font);
+  padding: 2px 10px;
+  border-radius: 20px;
+  border: 0.5px solid;
+}
+.pill-t { background: var(--ct-bg); border-color: var(--ct-b); color: var(--ct-t); }
+.pill-p { background: var(--cp-bg); border-color: var(--cp-b); color: var(--cp-t); }
+.pill-a { background: var(--ca-bg); border-color: var(--ca-b); color: var(--ca-t); }
+
+/* Layout */
+.main-layout { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.grids { flex: 2; min-width: 280px; }
+.controls { min-width: 210px; max-width: 250px; flex: 1; }
+
+/* Section labels */
+.sec { font-size: 12px; font-weight: 500; color: var(--text); margin-bottom: 2px; }
+.sec-s { font-size: 11px; color: var(--text3); margin-bottom: 6px; }
+.grid-section { margin-bottom: 16px; }
+
+/* Column axis */
+.col-axis { display: flex; gap: 3px; margin-bottom: 3px; }
+.col-lbl {
+  width: 38px; text-align: center; font-size: 9px;
+  color: var(--text3); transition: color .2s, font-weight .2s; flex-shrink: 0;
+}
+
+/* Cell */
+.grid-row { display: flex; gap: 3px; margin-bottom: 3px; }
+.cell {
+  width: 38px; height: 27px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius);
+  font-size: 9px; font-family: var(--font);
+  border: 0.5px solid transparent;
+  transition: background .2s, color .2s, border-color .2s;
+  flex-shrink: 0;
+}
+.cell-t   { background: var(--ct-bg); color: var(--ct-t); border-color: var(--ct-b); }
+.cell-p   { background: var(--cp-bg); color: var(--cp-t); border-color: var(--cp-b); }
+.cell-a   { background: var(--ca-bg); color: var(--ca-t); border-color: var(--ca-b); }
+.cell-win  { background: var(--ct-hbg) !important; color: var(--ct-ht) !important; border-color: var(--ct-hb) !important; border-width: 1px !important; }
+.cell-wact { background: var(--cp-hbg) !important; color: var(--cp-ht) !important; border-color: var(--cp-hb) !important; border-width: 1px !important; }
+.cell-oact { background: var(--ca-hbg) !important; color: var(--ca-ht) !important; border-color: var(--ca-hb) !important; border-width: 1px !important; }
+.cell-dim  { opacity: 0.15; }
+
+/* Info / formula box */
+.info-box {
+  background: var(--bg2);
+  border: 0.5px solid var(--border2);
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.7;
+}
+.info-box strong { color: var(--text); font-weight: 500; }
+.info-box code {
+  font-family: var(--font); font-size: 11px;
+  background: var(--bg3); padding: 1px 4px;
+}
+
+/* Slider row */
+.ctrl-row { margin-bottom: 14px; }
+.ctrl-lbl { font-size: 11px; color: var(--text2); display: block; margin-bottom: 4px; }
+.ctrl-inner { display: flex; align-items: center; gap: 8px; }
+input[type=range] {
+  flex: 1; height: 3px;
+  -webkit-appearance: none; appearance: none;
+  background: var(--border2); outline: none; cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 14px; height: 14px; border-radius: 0;
+  background: var(--ct-b); cursor: pointer;
+  border: 1.5px solid var(--bg);
+}
+.ctrl-val { font-size: 12px; font-weight: 600; color: var(--text); min-width: 16px; text-align: right; }
+
+/* Thread box */
+.thread-row { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--text2); margin-bottom: 5px; }
+.thread-dot { width: 9px; height: 9px; border-radius: 0; flex-shrink: 0; }
+.thread-note { font-size: 10px; color: var(--text3); line-height: 1.5; margin-top: 6px; }
+
+/* Arch flow */
+.arch-item { display: flex; align-items: center; gap: 7px; font-size: 11px; margin-bottom: 5px; }
+.arch-dot { width: 7px; height: 7px; flex-shrink: 0; }
+.arch-active { font-weight: 500; color: var(--text); }
+.arch-dim    { color: var(--text3); }
+
+/* Status */
+.status-bar { margin-top: 14px; font-size: 10px; color: var(--text3); min-height: 14px; }
+
+/* Divider */
+hr { border: none; border-top: 0.5px solid var(--border); margin: 14px 0; }
+
+/* Footer */
+.footer { font-size: 11px; color: var(--text3); margin-top: 2rem; padding-top: 1rem; border-top: 0.5px solid var(--border); }
+</style>
+</head>
+<body>
+
+<h1>SSM conv kernel — scalar depthwise 1D convolution</h1>
+<p class="subtitle">ggml_compute_forward_ssm_conv_f32 · LFM2-700M · d_inner=1536, d_conv=4</p>
+
+<div class="legend">
+  <span class="pill pill-t">src0  conv_x  [d_conv-1+n_t, d_inner]</span>
+  <span class="pill pill-p">src1  weight  [d_conv, d_inner]</span>
+  <span class="pill pill-a">dst  output  [d_inner, n_t]</span>
+</div>
+
+<div class="main-layout">
+
+  <div class="grids">
+    <div class="grid-section">
+      <div class="sec">conv_x buffer <span style="font-size:10px;font-weight:400;color:var(--text3)">(src0) — sliding window context</span></div>
+      <div class="sec-s">d_conv-1+n_t cols · d_inner rows  [row stride = ncs × 4 bytes]</div>
+      <div class="col-axis" id="cx-col-axis"></div>
+      <div id="cx-grid"></div>
+    </div>
+    <div class="grid-section">
+      <div class="sec">conv1d.weight <span style="font-size:10px;font-weight:400;color:var(--text3)">(src1) — per-channel filters</span></div>
+      <div class="sec-s">d_conv cols · d_inner rows</div>
+      <div class="col-axis" id="w-col-axis"></div>
+      <div id="w-grid"></div>
+    </div>
+    <div class="grid-section">
+      <div class="sec">output <span style="font-size:10px;font-weight:400;color:var(--text3)">(dst)</span></div>
+      <div class="sec-s">d_inner rows · n_t cols</div>
+      <div id="o-grid"></div>
+    </div>
+  </div>
+
+  <div class="controls">
+
+    <div class="ctrl-row">
+      <label class="ctrl-lbl">Token (t)</label>
+      <div class="ctrl-inner">
+        <input type="range" id="t-slider" min="0" max="3" value="0" step="1">
+        <span class="ctrl-val" id="t-val">0</span>
+      </div>
+    </div>
+
+    <div class="ctrl-row">
+      <label class="ctrl-lbl">Channel row (d_inner)</label>
+      <div class="ctrl-inner">
+        <input type="range" id="d-slider" min="0" max="3" value="0" step="1">
+        <span class="ctrl-val" id="d-val">0</span>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <div style="font-size:10px;color:var(--text3);margin-bottom:6px">dot product — selected cell</div>
+      <div id="formula" style="font-size:11px;min-height:18px;word-break:break-all;line-height:1.6">—</div>
+      <hr>
+      <div style="font-size:11px;color:var(--text2)">= <strong id="result-val" style="font-size:13px">—</strong></div>
+    </div>
+
+    <div class="info-box">
+      <div style="font-size:11px;font-weight:500;color:var(--text);margin-bottom:8px">Thread parallelism over d_inner</div>
+      <div id="thread-bands"></div>
+      <div class="thread-note">Each thread owns a slice of rows.<br>Sequences &amp; tokens loop inside.</div>
+    </div>
+
+    <div>
+      <div class="sec" style="margin-bottom:6px">Where this sits in LFM2-700M</div>
+      <div id="arch-flow"></div>
+    </div>
+
+    <div class="status-bar" id="status"></div>
+  </div>
+</div>
+<div class="footer">ggml_compute_forward_ssm_conv_f32 · RISC-V Vector · LFM2-700M d_inner=1536 d_conv=4</div>
+
+<script>
+const D_CONV=4, D_INNER=4, N_T=4, NCS=D_CONV-1+N_T;
+const cx=Array.from({length:D_INNER},(_,d)=>Array.from({length:NCS},(_,t)=>parseFloat(((Math.sin(d*1.3+t*0.8)*0.5+0.5)*0.9+0.05).toFixed(2))));
+const ww=Array.from({length:D_INNER},(_,d)=>Array.from({length:D_CONV},(_,k)=>parseFloat(((Math.cos(d*1.7+k*1.1)*0.4+0.1)).toFixed(2))));
+function getOutput(d,t){let s=0;for(let k=0;k<D_CONV;k++)s+=cx[d][t+k]*ww[d][k];return s.toFixed(3);}
+
+function buildAxis(id,n,pfx){
+  const el=document.getElementById(id);
+  for(let i=0;i<n;i++){const d=document.createElement('div');d.className='col-lbl';d.id=id+'_'+i;d.textContent=pfx+i;el.appendChild(d);}
+}
+buildAxis('cx-col-axis',NCS,'t');
+buildAxis('w-col-axis',D_CONV,'k');
+
+function buildGrid(id,rows,cols,cls){
+  const el=document.getElementById(id),all=[];
+  for(let r=0;r<rows;r++){
+    const row=document.createElement('div');row.className='grid-row';const rc=[];
+    for(let c=0;c<cols;c++){const cell=document.createElement('div');cell.className='cell '+cls;row.appendChild(cell);rc.push(cell);}
+    el.appendChild(row);all.push(rc);
+  }
+  return all;
+}
+const cxG=buildGrid('cx-grid',D_INNER,NCS,'cell-t');
+const wG =buildGrid('w-grid', D_INNER,D_CONV,'cell-p');
+const oG =buildGrid('o-grid', D_INNER,N_T,'cell-a');
+for(let d=0;d<D_INNER;d++){
+  for(let t=0;t<NCS;t++) cxG[d][t].textContent=cx[d][t];
+  for(let k=0;k<D_CONV;k++) wG[d][k].textContent=ww[d][k];
+  for(let t=0;t<N_T;t++) oG[d][t].textContent=getOutput(d,t);
+}
+
+// Thread bands
+const bandColors=['#1D9E75','#534AB7'];
+const bandEl=document.getElementById('thread-bands');
+['rows 0–1','rows 2–3'].forEach((label,i)=>{
+  const row=document.createElement('div');row.className='thread-row';
+  const dot=document.createElement('div');dot.className='thread-dot';dot.style.background=bandColors[i];
+  row.appendChild(dot);
+  const txt=document.createElement('span');txt.textContent='Thread '+i+': '+label+' (d_inner)';
+  row.appendChild(txt);bandEl.appendChild(row);
+});
+
+// Arch flow
+const archEl=document.getElementById('arch-flow');
+[{l:'in_proj (Linear)',a:false},
+ {l:'Input gate  b × x',a:false},
+ {l:'ggml_ssm_conv  ← this kernel',a:true},
+ {l:'Output gate  c × conv_out',a:false},
+ {l:'out_proj (Linear)',a:false}].forEach(s=>{
+  const row=document.createElement('div');row.className='arch-item';
+  const dot=document.createElement('div');dot.className='arch-dot';dot.style.background=s.a?'#1D9E75':'var(--border2)';
+  row.appendChild(dot);
+  const txt=document.createElement('span');txt.className=s.a?'arch-active':'arch-dim';txt.textContent=s.l;
+  row.appendChild(txt);archEl.appendChild(row);
+});
+
+function update(){
+  const t=parseInt(document.getElementById('t-slider').value);
+  const d=parseInt(document.getElementById('d-slider').value);
+  document.getElementById('t-val').textContent=t;
+  document.getElementById('d-val').textContent=d;
+
+  for(let dd=0;dd<D_INNER;dd++){
+    for(let tt=0;tt<NCS;tt++){cxG[dd][tt].className='cell cell-t';cxG[dd][tt].classList.toggle('cell-dim',dd!==d);}
+    for(let k=0;k<D_CONV;k++){wG[dd][k].className='cell cell-p';wG[dd][k].classList.toggle('cell-dim',dd!==d);}
+    for(let tt=0;tt<N_T;tt++){oG[dd][tt].className='cell cell-a';oG[dd][tt].classList.toggle('cell-dim',dd!==d);}
+  }
+  for(let k=0;k<D_CONV;k++) cxG[d][t+k].className='cell cell-win';
+  for(let k=0;k<D_CONV;k++) wG[d][k].className='cell cell-wact';
+  oG[d][t].className='cell cell-oact';
+
+  for(let tt=0;tt<NCS;tt++){
+    const el=document.getElementById('cx-col-axis_'+tt);
+    if(el){el.style.color=(tt>=t&&tt<t+D_CONV)?'#5DCAA5':'var(--text3)';el.style.fontWeight=(tt>=t&&tt<t+D_CONV)?'700':'400';}
+  }
+  for(let k=0;k<D_CONV;k++){
+    const el=document.getElementById('w-col-axis_'+k);
+    if(el){el.style.color='#AFA9EC';el.style.fontWeight='700';}
+  }
+
+  const terms=[],sums=[];let sum=0;
+  for(let k=0;k<D_CONV;k++){terms.push(cx[d][t+k]+'×'+ww[d][k]);sum+=cx[d][t+k]*ww[d][k];}
+  document.getElementById('formula').textContent=terms.join(' + ');
+  document.getElementById('result-val').textContent=sum.toFixed(4);
+  document.getElementById('status').textContent='row='+d+'  token='+t+'  window=['+t+', '+(t+D_CONV-1)+']';
+}
+document.getElementById('t-slider').addEventListener('input',update);
+document.getElementById('d-slider').addEventListener('input',update);
+update();
+</script>
+</body>
+</html>
