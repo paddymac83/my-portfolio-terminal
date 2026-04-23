@@ -25,6 +25,7 @@
     "astro": "astro"
   },
   "dependencies": {
+    "@astro-community/astro-embed-youtube": "^0.5.10",
     "astro": "^5.15.7",
     "rehype-raw": "^7.0.0"
   },
